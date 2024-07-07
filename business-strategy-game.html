@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Business Strategy Simulation Game</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.js"></script>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-md">
+        <h1 class="text-2xl font-bold mb-4">Advanced Business Strategy Simulation Game</h1>
+        <div id="game-info" class="mb-4">
+            <p>Your marketing budget: $<span id="player-budget">100,000</span></p>
+            <p>Remaining budget: $<span id="remaining-budget">100,000</span></p>
+            <p>Round: <span id="current-round">1</span> of 3</p>
+            <p>Allocate up to $100,000 across the three customers</p>
+            <p class="mt-2 text-sm text-gray-600">Aim for a 5:1 resource advantage to achieve monopoly and capture full willingness to pay.</p>
+        </div>
+        <div id="customers" class="mb-4">
+            <h2 class="text-xl font-semibold mb-2">Customers</h2>
+            <div id="customer-list"></div>
+        </div>
+        <div id="allocations" class="mb-4">
+            <h2 class="text-xl font-semibold mb-2">Allocate Your Budget</h2>
+            <div id="allocation-inputs"></div>
+        </div>
+        <button id="submit-btn" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Submit Allocations</button>
+        <div id="results" class="mt-4"></div>
+        <div id="final-results" class="mt-4 hidden"></div>
+    </div>
+
+    <script>
+        const customers = [
+            { name: "Customer 1", willingnessToPay: 50000.00 },
+            { name: "Customer 2", willingnessToPay: 500000.00 },
+            { name: "Customer 3", willingnessToPay: 1000000.00 }
+        ];
+
+        let playerBudget = 100000;
+        let competitorAllocations = [];
+        let playerScore = 0;
+        let competitorScore = 0;
+        let currentRound = 1;
+
+        function formatNumber(number) {
+            return number.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function parseFormattedNumber(formattedNumber) {
+            return parseFloat(formattedNumber.replace(/,/g, ''));
+        }
+
+        function formatInputNumber(input) {
+            let value = input.value.replace(/[^\d.]/g, '');
+            let parts = value.split('.');
+            parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+            if (parts.length > 1) {
+                parts[1] = parts[1].slice(0, 2);
+            }
+            input.value = parts.join('.');
+            updateRemainingBudget();
+        }
+
+        function updateRemainingBudget() {
+            let totalAllocated = 0;
+            customers.forEach((_, index) => {
+                totalAllocated += parseFormattedNumber(document.getElementById(`allocation-${index}`).value) || 0;
+            });
+            let remaining = playerBudget - totalAllocated;
+            document.getElementById('remaining-budget').textContent = formatNumber(Math.max(0, remaining));
+        }
+
+        function formatRatio(playerAllocation, competitorAllocation) {
+            const ratio = Math.max(playerAllocation, competitorAllocation) / Math.min(playerAllocation, competitorAllocation);
+            const formattedRatio = ratio.toFixed(2);
+            if (playerAllocation > competitorAllocation) {
+                return { text: `Player ${formattedRatio} to 1`, value: ratio };
+            } else if (competitorAllocation > playerAllocation) {
+                return { text: `Competitor ${formattedRatio} to 1`, value: ratio };
+            } else {
+                return { text: "1 to 1", value: 1 };
+            }
+        }
+
+        function formatPercentage(part, whole) {
+            return ((part / whole) * 100).toFixed(2) + "%";
+        }
+
+        function generateCompetitorAllocations() {
+            let remaining = 100000;
+            return customers.map((_, index) => {
+                if (index === customers.length - 1) {
+                    return remaining;
+                }
+                const allocation = Math.floor(Math.random() * remaining);
+                remaining -= allocation;
+                return allocation;
+            });
+        }
+
+        function updateCustomerList() {
+            competitorAllocations = generateCompetitorAllocations();
+            const customerList = document.getElementById('customer-list');
+            customerList.innerHTML = customers.map((customer, index) => `
+                <div class="mb-2">
+                    <strong>${customer.name}</strong>: 
+                    Willingness to pay $${formatNumber(customer.willingnessToPay)} | 
+                    Competitor B's allocation: $${formatNumber(competitorAllocations[index])}
+                </div>
+            `).join('');
+        }
+
+        function updateAllocationInputs() {
+            const allocationInputs = document.getElementById('allocation-inputs');
+            allocationInputs.innerHTML = customers.map((customer, index) => `
+                <div class="mb-2">
+                    <label for="allocation-${index}">${customer.name}:</label>
+                    <input type="text" id="allocation-${index}" class="border rounded px-2 py-1" 
+                           oninput="formatInputNumber(this)">
+                </div>
+            `).join('');
+        }
+
+        function calculateResults(playerAllocations) {
+            let results = [];
+            let playerTotal = 0;
+            let competitorTotal = 0;
+
+            for (let i = 0; i < customers.length; i++) {
+                const customer = customers[i];
+                const playerAllocation = playerAllocations[i];
+                const competitorAllocation = competitorAllocations[i];
+
+                const ratioResult = formatRatio(playerAllocation, competitorAllocation);
+
+                let result = {
+                    customer: customer.name,
+                    willingnessToPay: customer.willingnessToPay,
+                    playerAllocation,
+                    competitorAllocation,
+                    outcome: '',
+                    ratio: ratioResult.text,
+                    playerPercentage: 0,
+                    competitorPercentage: 0,
+                    monopoly: false,
+                    splitAmount: 0
+                };
+
+                if (playerAllocation >= competitorAllocation * 5) {
+                    result.outcome = 'Player wins (Monopoly)';
+                    playerTotal += customer.willingnessToPay;
+                    result.playerPercentage = 100;
+                    result.monopoly = true;
+                } else if (competitorAllocation >= playerAllocation * 5) {
+                    result.outcome = 'Competitor wins (Monopoly)';
+                    competitorTotal += customer.willingnessToPay;
+                    result.competitorPercentage = 100;
+                    result.monopoly = true;
+                } else {
+                    result.outcome = 'Split (No Monopoly)';
+                    result.splitAmount = customer.willingnessToPay * 0.5;
+                    const totalAllocation = playerAllocation + competitorAllocation;
+                    const playerShare = playerAllocation / totalAllocation;
+                    const competitorShare = competitorAllocation / totalAllocation;
+                    const playerPayout = result.splitAmount * playerShare;
+                    const competitorPayout = result.splitAmount * competitorShare;
+                    playerTotal += playerPayout;
+                    competitorTotal += competitorPayout;
+                    result.playerPercentage = playerShare * 50;
+                    result.competitorPercentage = competitorShare * 50;
+                }
+
+                results.push(result);
+            }
+
+            return { results, playerTotal, competitorTotal };
+        }
+
+        function displayResults(results, playerTotal, competitorTotal) {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = `
+                <h2 class="text-xl font-semibold mb-2">Results for Round ${currentRound}</h2>
+                ${results.map(result => `
+                    <div class="mb-4 p-4 border rounded">
+                        <h3 class="font-semibold">${result.customer}</h3>
+                        <p>Willingness to pay: $${formatNumber(result.willingnessToPay)}</p>
+                        <p>Player allocation: $${formatNumber(result.playerAllocation)}</p>
+                        <p>Competitor allocation: $${formatNumber(result.competitorAllocation)}</p>
+                        <p>Resource allocation ratio: ${result.ratio}</p>
+                        <p>Outcome: ${result.outcome}</p>
+                        ${!result.monopoly ? `<p>Amount to be split (50% of willingness to pay): $${formatNumber(result.splitAmount)}</p>` : ''}
+                        <p>Player captured: ${formatPercentage(result.playerPercentage, 100)} of willingness to pay 
+                           ($${formatNumber(result.willingnessToPay * result.playerPercentage / 100)})</p>
+                        <p>Competitor captured: ${formatPercentage(result.competitorPercentage, 100)} of willingness to pay
+                           ($${formatNumber(result.willingnessToPay * result.competitorPercentage / 100)})</p>
+                        <p>Consumer surplus: ${formatPercentage(100 - result.playerPercentage - result.competitorPercentage, 100)}
+                           ($${formatNumber(result.willingnessToPay * (100 - result.playerPercentage - result.competitorPercentage) / 100)})</p>
+                    </div>
+                `).join('')}
+                <div class="mt-4 p-4 border rounded">
+                    <h3 class="font-semibold">Round ${currentRound} Results</h3>
+                    <p>Player Total: $${formatNumber(playerTotal)}</p>
+                    <p>Competitor Total: $${formatNumber(competitorTotal)}</p>
+                </div>
+            `;
+
+            playerScore += playerTotal;
+            competitorScore += competitorTotal;
+
+            if (currentRound < 3) {
+                currentRound++;
+                document.getElementById('current-round').textContent = currentRound;
+                playerBudget = 100000;
+                document.getElementById('player-budget').textContent = formatNumber(playerBudget);
+                document.getElementById('remaining-budget').textContent = formatNumber(playerBudget);
+                updateCustomerList();
+                updateAllocationInputs();
+            } else {
+                endGame();
+            }
+        }
+
+        function endGame() {
+            const finalResultsDiv = document.getElementById('final-results');
+            finalResultsDiv.innerHTML = `
+                <h2 class="text-2xl font-bold mb-4">Final Results</h2>
+                <p>Player Total Score: $${formatNumber(playerScore)}</p>
+                <p>Competitor Total Score: $${formatNumber(competitorScore)}</p>
+                <p class="text-xl font-semibold mt-4">
+                    ${playerScore > competitorScore ? 'Player Wins!' : playerScore < competitorScore ? 'Competitor Wins!' : 'It\'s a Tie!'}
+                </p>
+            `;
+            finalResultsDiv.classList.remove('hidden');
+            document.getElementById('submit-btn').disabled = true;
+        }
+
+        document.getElementById('submit-btn').addEventListener('click', () => {
+            const playerAllocations = customers.map((_, index) => 
+                parseFormattedNumber(document.getElementById(`allocation-${index}`).value) || 0
+            );
+
+            const totalAllocation = playerAllocations.reduce((sum, allocation) => sum + allocation, 0);
+            if (totalAllocation > playerBudget) {
+                alert('Total allocation exceeds your budget!');
+                return;
+            }
+
+            const { results, playerTotal, competitorTotal } = calculateResults(playerAllocations);
+            displayResults(results, playerTotal, competitorTotal);
+        });
+
+        updateCustomerList();
+        updateAllocationInputs();
+    </script>
+</body>
+</html>
